@@ -136,7 +136,9 @@ $('stopLocation').addEventListener('click',()=>{
 });
 
 // ---------- Optional office relay; only genuine BLE messages are forwarded ----------
-let relayEnabled=false,relayConnected=false,relayBusy=false,relayLastSent=0,relayQueued=false;
+let relayEnabled=false,relayConnected=false,relayBusy=false,relayLastSent=0;
+const pendingCriticalEvents=[]; // Never discard real FALL / ACK / ESC / END while a request is in flight.
+let criticalRetryTimer=null;
 const relayData={temp:null,humidity:null,hr:null,spo2:null,acc:null,lat:null,lng:null,accuracy:null,locationAt:null,envAt:null,hrAt:null,eventId:'',peak:null};
 const relayStatus = message => {$('relayStatus').textContent=message;};
 function relayEndpoint(){let u=$('relayURL').value.trim().replace(/\/+$/,'');if(!/^https:\/\/[^/]+$/.test(u)) throw new Error('Enter a valid HTTPS Cloudflare Worker base URL');return u;}
@@ -145,17 +147,40 @@ function relayBLE(msg){let parts=msg.trim().split(','),kind=parts[0],now=new Dat
  if(kind==='ENV'){relayData.temp=parseNullable(parts[1]);relayData.humidity=parseNullable(parts[2]);relayData.envAt=now;relaySchedule();}
  else if(kind==='HR'){relayData.hr=parseNullable(parts[1]);relayData.spo2=parseNullable(parts[2]);relayData.hrAt=now;relaySchedule();}
  else if(kind==='ACC'){relayData.acc=parseNullable(parts[1]);relaySchedule();}
- else if(['FALL','ACK','ESC','END'].includes(kind)){relayData.eventId=parts[1]||'';relayData.peak=kind==='FALL'?parseNullable(parts[2]):relayData.peak;relaySend(kind,true);}
+ else if(['FALL','ACK','ESC','END'].includes(kind)){relayData.eventId=parts[1]||'';relayData.peak=kind==='FALL'?parseNullable(parts[2]):relayData.peak;enqueueCritical(kind,parts[1]||'',kind==='FALL'?parseNullable(parts[2]):relayData.peak);}
 }
 function relayLocation(pos){relayData.lat=pos.coords.latitude;relayData.lng=pos.coords.longitude;relayData.accuracy=pos.coords.accuracy;relayData.locationAt=new Date(pos.timestamp).toISOString();relaySchedule();}
+function enqueueCritical(event,eventId,peak){
+ // Store an independent snapshot of each BLE event so a later event cannot overwrite it.
+ if(!relayEnabled){relayStatus('BLE '+event+' received, but office relay is OFF — not uploaded');return;}
+ pendingCriticalEvents.push({event,eventId,peak,at:new Date().toISOString()});
+ relaySend('NONE',true);
+}
 function relaySchedule(){if(!relayEnabled||!relayConnected)return;if(Date.now()-relayLastSent>=15000)relaySend('NONE');}
 async function relaySend(event='NONE',force=false){
  if(!relayEnabled||relayBusy||(!relayConnected&&!force))return;
  let url,key,helmet;try{url=relayEndpoint();key=$('relayKey').value.trim();helmet=$('relayHelmet').value.trim();if(!key||!/^[a-zA-Z0-9_-]{1,32}$/.test(helmet))throw Error('Missing access key or invalid helmet ID');}catch(e){relayStatus(e.message);return;}
- relayBusy=true;
- try{const res=await fetch(url+'/ingest',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify({...relayData,helmet,event,connected:relayConnected})});const body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||('HTTP '+res.status));relayLastSent=Date.now();relayStatus('Office server received '+event+' at '+new Date().toLocaleTimeString()+' (not yet confirmed viewed by an officer)');}
- catch(e){relayStatus('Office relay FAILED: '+e.message+' — no delivery confirmed');}
- finally{relayBusy=false;}
+ const urgent=pendingCriticalEvents.length?pendingCriticalEvents[0]:null;
+ const sendingEvent=urgent?urgent.event:event;
+ // Event ID/peak copied from the queued message, not from mutable latest telemetry.
+ const payload={...relayData,helmet,event:sendingEvent,connected:relayConnected};
+ if(urgent){payload.eventId=urgent.eventId;payload.peak=urgent.peak;}
+ relayBusy=true;let delivered=false;
+ try{
+  const res=await fetch(url+'/ingest',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify(payload)});
+  const body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||('HTTP '+res.status));
+  delivered=true;relayLastSent=Date.now();
+  if(urgent)pendingCriticalEvents.shift();
+  relayStatus('Office server received '+sendingEvent+' at '+new Date().toLocaleTimeString()+(pendingCriticalEvents.length?' · '+pendingCriticalEvents.length+' queued':'')+' (not yet confirmed viewed by officer)');
+ }catch(e){relayStatus('Office relay FAILED for '+sendingEvent+': '+e.message+' — will retry; no delivery confirmed');}
+ finally{
+  relayBusy=false;
+  if(criticalRetryTimer)clearTimeout(criticalRetryTimer);
+  if(pendingCriticalEvents.length){
+   // Retry briefly on failures, or immediately drain the next queued event.
+   criticalRetryTimer=setTimeout(()=>relaySend('NONE',true),delivered?100:2500);
+  }
+ }
 }
 $('relayStart').onclick=()=>{try{relayEndpoint();if(!$('relayKey').value.trim())throw Error('Enter Cloudflare ingest access key');relayEnabled=true;relayStatus('Relay enabled; connect BLE, then allow location. Will send readings about every 15s and genuine fall events immediately.');if(relayConnected)relaySend('NONE',true);}catch(e){relayStatus(e.message);}};
 $('relayStop').onclick=()=>{relayEnabled=false;relayStatus('Office relay disabled.');};
