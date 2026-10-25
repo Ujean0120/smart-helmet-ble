@@ -7,8 +7,15 @@ body{margin:0;padding:18px 14px 40px}.wrap{max-width:760px;margin:auto}header{di
 .location-map{width:100%;height:300px;border:1px solid #dfe5eb;border-radius:12px;margin:12px 0;background:#edf2f6}.location-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.location-details>div{background:#f4f6f8;border-radius:10px;padding:11px;overflow-wrap:anywhere}.location-details strong{display:block;font-size:15px;margin-top:4px}.maplink{display:inline-block;margin:4px 0 10px;font-weight:700}.location-status{font-size:13px;color:#526273;margin-top:8px}</style></head><body><div class="wrap">
 <header><div><h1><span class="logo">●</span> Smart Helmet Clip</h1><small>Worker monitoring · BLE test prototype</small></div><span class="pill" id="conn">Disconnected</span></header>
 <div class="panel"><div class="row"><h2>Bluetooth connection</h2><span id="device" class="muted">No device</span></div><div class="buttons"><button id="connect">Connect helmet</button><button id="disconnect" class="secondary" disabled>Disconnect</button><button id="sound" class="secondary">Enable alert sound</button></div><p class="hint">Use this HTTPS page inside Bluefy. Sensors start after the page connects and sends HELLO. Keep the page in the foreground for this test. Sound is optional and may need a tap to enable.</p></div>
-<div class="panel"><h2>Emergency status</h2><div id="alert" class="status">No active fall alert</div><div id="countdown" class="count" style="display:none;margin:10px 0"></div><p id="alertDetail" class="hint">If a possible fall is detected, a 5-second acknowledgement window will begin. Holding GPIO7 on the helmet for 2 seconds cancels escalation.</p><div id="callPanel" class="callpanel" hidden><div class="calltitle">📞 Site Monitoring Office</div><div class="hint">Contact: <strong>010 267 5684</strong>. Calling requires a tap and may require iPhone confirmation.</div><a id="callOffice" class="callbtn" href="tel:01113148637">Call monitoring office</a><div id="callMessage" class="hint">This page cannot automatically place a cellular call.</div></div><div class="buttons"><button id="testFall" class="secondary">Simulate FALL</button><button id="testAck" class="secondary">Simulate ACK</button><button id="testEsc" class="secondary">Simulate ESC</button></div><p class="hint">Fall alerts and the countdown are simulated locally. The Call monitoring office button opens the iPhone dialer for a real call after you tap it; the webpage cannot confirm whether a call was connected. No automatic call or office message is sent.</p></div>
+<div class="panel"><h2>Emergency status</h2><div id="alert" class="status">No active fall alert</div><div id="countdown" class="count" style="display:none;margin:10px 0"></div><p id="alertDetail" class="hint">If a possible fall is detected, a 5-second acknowledgement window will begin. Holding GPIO7 on the helmet for 2 seconds cancels escalation.</p><div id="callPanel" class="callpanel" hidden><div class="calltitle">📞 Site Monitoring Office</div><div class="hint">Contact: <strong>011-1314 8637</strong>. Calling requires a tap and may require iPhone confirmation.</div><a id="callOffice" class="callbtn" href="tel:01113148637">Call monitoring office</a><div id="callMessage" class="hint">This page cannot automatically place a cellular call.</div></div><div class="buttons"><button id="testFall" class="secondary">Simulate FALL</button><button id="testAck" class="secondary">Simulate ACK</button><button id="testEsc" class="secondary">Simulate ESC</button></div><p class="hint">Fall alerts and the countdown are simulated locally. The Call monitoring office button opens the iPhone dialer for a real call after you tap it; the webpage cannot confirm whether a call was connected. No automatic call or office message is sent.</p></div>
 <div class="grid"><div class="panel"><div class="label">Temperature</div><div class="metric" id="temp">—</div><div class="hint" id="tempUpdated">Last updated: never</div></div><div class="panel"><div class="label">Humidity</div><div class="metric" id="humidity">—</div><div class="hint" id="humidityUpdated">Last updated: never</div></div><div class="panel"><div class="label">Heart rate</div><div class="metric" id="hr">—</div><div class="hint" id="hrUpdated">Last updated: never</div></div><div class="panel"><div class="label">Oxygen (SpO₂)</div><div class="metric" id="spo2">—</div><div class="hint" id="spo2Updated">Last updated: never</div></div></div>
+<div class="panel" id="officeRelayPanel"><h2>Office Live Data Relay</h2>
+ <p class="hint">Opt-in prototype: forwards helmet readings, fall events and last permitted iPhone location to your monitoring office over internet. Keep Bluefy in the foreground. Real worker data requires consent and authorization.</p>
+ <label class="label" for="relayURL">Cloudflare Worker API URL (without /ingest)</label><input id="relayURL" placeholder="https://smart-helmet-relay.YOURSUBDOMAIN.workers.dev" style="width:100%;padding:12px;margin:6px 0 12px;border:1px solid #ccd5e0;border-radius:9px">
+ <label class="label" for="relayHelmet">Helmet ID</label><input id="relayHelmet" value="SHC-001" style="width:100%;padding:12px;margin:6px 0 12px;border:1px solid #ccd5e0;border-radius:9px">
+ <label class="label" for="relayKey">Ingest access key</label><input id="relayKey" type="password" autocomplete="off" placeholder="Private INGEST_KEY set in Cloudflare" style="width:100%;padding:12px;margin:6px 0 12px;border:1px solid #ccd5e0;border-radius:9px">
+ <div class="buttons"><button id="relayStart">Start Office Relay</button><button id="relayStop" class="secondary">Stop Relay</button><button id="relayTest" class="secondary">Send Test Snapshot</button></div>
+ <p id="relayStatus" class="hint" role="status">Relay off. ESP32/BLE functions remain independent.</p><p class="hint">Access key stays in this browser tab memory and is not stored in GitHub. Reloading the page requires re-entering the key. Test snapshots are labeled via the status message; simulated FALL/ESC buttons do not send office alerts.</p></div>
 <div class="panel" id="locationPanel"><div class="row"><h2>Phone Location &amp; Map</h2><span id="locationPill" class="pill">Not enabled</span></div>
 <p class="hint">Uses your iPhone location with permission, not a GPS module on the helmet. Tap Get location to start. The map needs internet. Location is displayed on this phone only; no information is automatically sent to the office.</p>
 <div class="buttons"><button id="getLocation">Get my location</button><button id="stopLocation" class="secondary" disabled>Stop updates</button></div>
@@ -58,10 +65,10 @@ function receive(message){log('BLE ← '+message);const p=message.trim().split('
 }
 $('connect').onclick=async()=>{try{if(!navigator.bluetooth)throw new Error('Web Bluetooth unavailable — open this HTTPS page inside Bluefy');
  device=await navigator.bluetooth.requestDevice({filters:[{name:'Smart_Helmet_Clip'}],optionalServices:[SERVICE]});
- device.addEventListener('gattserverdisconnected',()=>{connection(false);$('temp').textContent='—';$('humidity').textContent='—';$('hr').textContent='—';$('spo2').textContent='—';$('acc').textContent='—';log('Bluetooth disconnected');$('alertDetail').textContent='Bluetooth disconnected. This page cannot receive emergency signals.';});
+ device.addEventListener('gattserverdisconnected',()=>{connection(false);$('temp').textContent='—';$('humidity').textContent='—';$('hr').textContent='—';$('spo2').textContent='—';$('acc').textContent='—';log('Bluetooth disconnected');relayConnected=false;relaySend('NONE',true);$('alertDetail').textContent='Bluetooth disconnected. This page cannot receive emergency signals.';});
  const server=await device.gatt.connect();const service=await server.getPrimaryService(SERVICE);tx=await service.getCharacteristic(TX);rx=await service.getCharacteristic(RX);
- tx.addEventListener('characteristicvaluechanged',event=>{let bytes=event.target.value;const msg=new TextDecoder().decode(bytes);receive(msg);});
- await tx.startNotifications();connection(true);log('BLE connected; notifications subscribed');
+ tx.addEventListener('characteristicvaluechanged',event=>{let bytes=event.target.value;const msg=new TextDecoder().decode(bytes);receive(msg);relayBLE(msg);});
+ await tx.startNotifications();relayConnected=true;connection(true);log('BLE connected; notifications subscribed');
  // Notify ESP32 only AFTER the page is listening, preventing missed initial data.
  const hello=new TextEncoder().encode('HELLO');
  await rx.writeValue(hello);
@@ -86,7 +93,7 @@ function locationFailure(error){
   $('locationPill').textContent='Unavailable';$('locationPill').className='pill danger';
   log('Phone location: '+reason);
 }
-function locationSuccess(position){
+function locationSuccess(position){ relayLocation(position);
   const lat=position.coords.latitude,lon=position.coords.longitude;
   const accuracy=position.coords.accuracy;
   if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
@@ -127,4 +134,32 @@ $('stopLocation').addEventListener('click',()=>{
   $('locationStatus').textContent='Updates stopped. Map shows the last known phone location, not a live position.';
   $('getLocation').textContent='Get my location';
 });
+
+// ---------- Optional office relay; only genuine BLE messages are forwarded ----------
+let relayEnabled=false,relayConnected=false,relayBusy=false,relayLastSent=0,relayQueued=false;
+const relayData={temp:null,humidity:null,hr:null,spo2:null,acc:null,lat:null,lng:null,accuracy:null,locationAt:null,envAt:null,hrAt:null,eventId:'',peak:null};
+const relayStatus = message => {$('relayStatus').textContent=message;};
+function relayEndpoint(){let u=$('relayURL').value.trim().replace(/\/+$/,'');if(!/^https:\/\/[^/]+$/.test(u)) throw new Error('Enter a valid HTTPS Cloudflare Worker base URL');return u;}
+function parseNullable(s){let n=Number(s);return s==null||s==='NA'||s===''||!Number.isFinite(n)?null:n;}
+function relayBLE(msg){let parts=msg.trim().split(','),kind=parts[0],now=new Date().toISOString();
+ if(kind==='ENV'){relayData.temp=parseNullable(parts[1]);relayData.humidity=parseNullable(parts[2]);relayData.envAt=now;relaySchedule();}
+ else if(kind==='HR'){relayData.hr=parseNullable(parts[1]);relayData.spo2=parseNullable(parts[2]);relayData.hrAt=now;relaySchedule();}
+ else if(kind==='ACC'){relayData.acc=parseNullable(parts[1]);relaySchedule();}
+ else if(['FALL','ACK','ESC','END'].includes(kind)){relayData.eventId=parts[1]||'';relayData.peak=kind==='FALL'?parseNullable(parts[2]):relayData.peak;relaySend(kind,true);}
+}
+function relayLocation(pos){relayData.lat=pos.coords.latitude;relayData.lng=pos.coords.longitude;relayData.accuracy=pos.coords.accuracy;relayData.locationAt=new Date(pos.timestamp).toISOString();relaySchedule();}
+function relaySchedule(){if(!relayEnabled||!relayConnected)return;if(Date.now()-relayLastSent>=15000)relaySend('NONE');}
+async function relaySend(event='NONE',force=false){
+ if(!relayEnabled||relayBusy||(!relayConnected&&!force))return;
+ let url,key,helmet;try{url=relayEndpoint();key=$('relayKey').value.trim();helmet=$('relayHelmet').value.trim();if(!key||!/^[a-zA-Z0-9_-]{1,32}$/.test(helmet))throw Error('Missing access key or invalid helmet ID');}catch(e){relayStatus(e.message);return;}
+ relayBusy=true;
+ try{const res=await fetch(url+'/ingest',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify({...relayData,helmet,event,connected:relayConnected})});const body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||('HTTP '+res.status));relayLastSent=Date.now();relayStatus('Office server received '+event+' at '+new Date().toLocaleTimeString()+' (not yet confirmed viewed by an officer)');}
+ catch(e){relayStatus('Office relay FAILED: '+e.message+' — no delivery confirmed');}
+ finally{relayBusy=false;}
+}
+$('relayStart').onclick=()=>{try{relayEndpoint();if(!$('relayKey').value.trim())throw Error('Enter Cloudflare ingest access key');relayEnabled=true;relayStatus('Relay enabled; connect BLE, then allow location. Will send readings about every 15s and genuine fall events immediately.');if(relayConnected)relaySend('NONE',true);}catch(e){relayStatus(e.message);}};
+$('relayStop').onclick=()=>{relayEnabled=false;relayStatus('Office relay disabled.');};
+$('relayTest').onclick=()=>{if(!relayEnabled)relayStatus('Start Office Relay first.');else relaySend('NONE',true);};
+setInterval(()=>{if(relayEnabled&&relayConnected&&!relayBusy&&Date.now()-relayLastSent>30000)relaySend('NONE');},5000);
+
 </script></body></html>
