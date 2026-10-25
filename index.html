@@ -1,22 +1,61 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Smart Helmet BLE Test</title>
-<style>:root{font-family:system-ui,-apple-system,sans-serif;color:#162332;background:#f4f6f8}body{max-width:680px;margin:auto;padding:20px}header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.logo{background:#d11026;color:white;border-radius:12px;padding:12px;font-size:24px}h1{font-size:22px;margin:0}p{color:#536477}.card{background:white;padding:18px;border-radius:16px;margin:14px 0;box-shadow:0 1px 5px #0001}.status{font-weight:700}.connected{color:#0a8a57}.disconnected{color:#ae2536}button{border:0;border-radius:10px;padding:13px 16px;font-size:16px;font-weight:650;background:#d11026;color:white;margin:4px 4px 4px 0}button.secondary{background:#31455b}button:disabled{background:#9aa5ae}.metric{font-size:26px;font-weight:700}.small{font-size:13px;color:#64748b}#log{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,monospace;font-size:12px;max-height:300px;overflow:auto;background:#111c2b;color:#e3f2ff;padding:12px;border-radius:10px}#alert{display:none;background:#ffe6e9;color:#9a1227;padding:14px;border-radius:10px;font-weight:750}</style></head><body>
-<header><div class="logo">⛑</div><div><h1>Smart Helmet Clip</h1><div class="small">iPhone BLE connectivity test</div></div></header>
-<div class="card"><p id="status" class="status disconnected">● Not connected</p><button id="connect">Connect to Helmet</button><button id="disconnect" class="secondary" disabled>Disconnect</button><div class="small" id="device">Device: none</div></div>
-<div class="card"><div id="alert">⚠️ POSSIBLE FALL DETECTED — TEST EVENT</div><p class="small">Last received message</p><div class="metric" id="last">—</div><p class="small" id="lastTime">No messages yet</p><button id="hello" disabled>Send HELLO to ESP32</button><button id="testFall" class="secondary" disabled>Trigger test FALL on ESP32</button></div>
-<div class="card"><strong>Event log</strong><div id="log">Ready. Open in Bluefy and tap Connect.</div></div>
-<div class="small">Prototype only. This page does not send emergency alerts or operate reliably in the background.</div>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Smart Helmet · Bluefy</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#192638;background:#f3f5f8}*{box-sizing:border-box}
+body{margin:0;padding:18px 14px 40px}.wrap{max-width:760px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 20px}h1{font-size:22px;margin:0}small,.muted{color:#718096}h2{font-size:17px;margin:0 0 12px}.logo{color:#ca182d}.pill{border-radius:50px;padding:7px 12px;font-weight:700;font-size:12px;background:#e3e8ef;color:#536278}.pill.ok{background:#d8f7e6;color:#117746}.pill.danger{background:#ffe0e2;color:#bc2030}.panel{background:#fff;border-radius:17px;padding:18px;margin-bottom:13px;box-shadow:0 2px 14px #1a29330b}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.metric{font-size:31px;font-weight:800;letter-spacing:-1px;margin:10px 0 4px}.label{font-size:13px;color:#526273}button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;background:#cc192e;color:white;font-size:15px;cursor:pointer}button.secondary{background:#e9edf2;color:#283447}button:disabled{opacity:.5}.buttons{display:flex;gap:8px;flex-wrap:wrap}.status{padding:14px;border-radius:12px;background:#edf9f2;color:#177749;font-weight:700}.status.warning{background:#fff0df;color:#9a5b05}.status.alert{background:#fee7e7;color:#b71f31}.status.critical{background:#bd182b;color:white;animation:pulse 1s infinite}.count{font-size:33px;font-weight:850}.event{border-bottom:1px solid #edf0f3;padding:9px 0;font-size:13px;overflow-wrap:anywhere}.event:last-child{border:0}.hint{font-size:12px;color:#667488;line-height:1.45}a{color:#b61b31}@keyframes pulse{50%{opacity:.72}}@media(max-width:380px){.metric{font-size:26px}}
+</style></head><body><div class="wrap">
+<header><div><h1><span class="logo">●</span> Smart Helmet Clip</h1><small>Worker monitoring · BLE test prototype</small></div><span class="pill" id="conn">Disconnected</span></header>
+<div class="panel"><div class="row"><h2>Bluetooth connection</h2><span id="device" class="muted">No device</span></div><div class="buttons"><button id="connect">Connect helmet</button><button id="disconnect" class="secondary" disabled>Disconnect</button><button id="sound" class="secondary">Enable alert sound</button></div><p class="hint">Use this HTTPS page inside the Bluefy app. Keep the page in the foreground for this test. Sound is optional and may need a tap to enable.</p></div>
+<div class="panel"><h2>Emergency status</h2><div id="alert" class="status">No active fall alert</div><div id="countdown" class="count" style="display:none;margin:10px 0"></div><p id="alertDetail" class="hint">If a possible fall is detected, a 5-second acknowledgement window will begin. Holding GPIO7 on the helmet for 2 seconds cancels escalation.</p><div class="buttons"><button id="testFall" class="secondary">Simulate FALL</button><button id="testAck" class="secondary">Simulate ACK</button><button id="testEsc" class="secondary">Simulate ESC</button></div><p class="hint">Emergency call is <strong>visual simulation only</strong>. No phone call or office message is sent.</p></div>
+<div class="grid"><div class="panel"><div class="label">Temperature</div><div class="metric" id="temp">—</div><div class="hint" id="tempUpdated">Last updated: never</div></div><div class="panel"><div class="label">Humidity</div><div class="metric" id="humidity">—</div><div class="hint" id="humidityUpdated">Last updated: never</div></div><div class="panel"><div class="label">Heart rate</div><div class="metric" id="hr">—</div><div class="hint" id="hrUpdated">Last updated: never</div></div><div class="panel"><div class="label">Oxygen (SpO₂)</div><div class="metric" id="spo2">—</div><div class="hint" id="spo2Updated">Last updated: never</div></div></div>
+<div class="panel"><div class="row"><h2>Acceleration</h2><span class="muted" id="accUpdated">Not received</span></div><div class="metric" id="acc">—</div><small>2.2g = experimental possible-impact threshold, not confirmed fall</small></div>
+<div class="panel"><div class="row"><h2>Event log</h2><button class="secondary" id="clear">Clear</button></div><div id="events"><div class="hint">Waiting for data...</div></div></div>
+<p class="hint">Prototype only. Not a medical monitor or dependable emergency alarm. BLE events may stop when the iPhone locks, Bluefy suspends, or the connection drops. Ambient BME280 temperature is not body temperature.</p>
+</div>
 <script>
+'use strict';
 const SERVICE='4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const TX='beb5483e-36e1-4688-b7f5-ea07361b26a8';
 const RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-let device=null, command=null, notification=null;
 const $=id=>document.getElementById(id);
-function log(s){const t=new Date().toLocaleTimeString();$('log').textContent=`[${t}] ${s}\n`+$('log').textContent;}
-function status(connected){$('status').textContent=connected?'● BLE Connected':'● Not connected';$('status').className='status '+(connected?'connected':'disconnected');$('connect').disabled=connected;$('disconnect').disabled=!connected;$('hello').disabled=!connected;$('testFall').disabled=!connected;}
-function incoming(event){const message=new TextDecoder().decode(event.target.value);$('last').textContent=message;$('lastTime').textContent='Received '+new Date().toLocaleTimeString();log('← '+message);if(message.startsWith('FALL,')){$('alert').style.display='block';}if(message.startsWith('ACK,')){$('alert').style.display='none';}}
-$('connect').onclick=async()=>{if(!navigator.bluetooth){log('Web Bluetooth is not available. Open this HTTPS page in Bluefy on your iPhone.');return;}try{log('Opening BLE device picker...');device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'Smart_Helmet'}],optionalServices:[SERVICE]});device.addEventListener('gattserverdisconnected',()=>{status(false);log('Device disconnected');});const server=await device.gatt.connect();const service=await server.getPrimaryService(SERVICE);notification=await service.getCharacteristic(TX);command=await service.getCharacteristic(RX);await notification.startNotifications();notification.addEventListener('characteristicvaluechanged',incoming);$('device').textContent='Device: '+(device.name||'Unnamed');status(true);log('Connected and notifications subscribed');}catch(e){log('Connect error: '+e.message);status(false);}};
-$('disconnect').onclick=()=>{if(device?.gatt?.connected){device.gatt.disconnect();}status(false);};
-async function send(text){if(!command){log('Not connected');return;}try{const bytes=new TextEncoder().encode(text);await command.writeValue(bytes);log('→ '+text);}catch(e){log('Write error: '+e.message);}}
-$('hello').onclick=()=>send('HELLO');$('testFall').onclick=()=>send('TEST_FALL');
+let device=null, tx=null, rx=null, currentEvent=null, alertMode='normal',deadline=0, countdownTimer=null,audioCtx=null;
+let lastEnvAt=0,lastHrAt=0;
+const time=()=>new Date().toLocaleTimeString();
+function log(message){const panel=$('events');if(panel.querySelector('.hint'))panel.textContent='';const el=document.createElement('div');el.className='event';el.textContent=`${time()} · ${message}`;panel.prepend(el);while(panel.children.length>60)panel.lastElementChild.remove();}
+function connection(connected){$('conn').textContent=connected?'Connected':'Disconnected';$('conn').className='pill '+(connected?'ok':'');$('connect').disabled=connected;$('disconnect').disabled=!connected;$('device').textContent=connected?(device?.name||'Helmet'):'No device';}
+function sound(){if(!audioCtx)return;try{let osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.frequency.value=880;gain.gain.value=.045;osc.connect(gain);gain.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+.13);}catch(_){}}
+$('sound').onclick=async()=>{try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();await audioCtx.resume();sound();log('Alert sound enabled');$('sound').textContent='Sound enabled';}catch(e){log('Sound not available: '+e.message);}};
+function showAlert(mode,details){alertMode=mode;const el=$('alert');const c=$('countdown');el.className='status';c.style.display='none';
+ if(mode==='warning'){el.className+=' warning';el.textContent='⚠ Possible fall detected — calling emergency in 5 seconds';c.style.display='block';deadline=Date.now()+5000;sound();}
+ else if(mode==='escalated'){el.className+=' critical';el.textContent='🚨 CALLING EMERGENCY SIGNAL — SIMULATION';$('alertDetail').textContent='No helmet acknowledgement received. In a later phase, this would trigger a secure notification to the management office.';sound();}
+ else if(mode==='ack'){el.textContent='✓ Helmet button acknowledged — escalation cancelled';$('alertDetail').textContent='Worker held GPIO7 for 2 seconds. Event is retained in the log.';}
+ else if(mode==='finished'){el.className+=' alert';el.textContent='Emergency alert sequence completed';$('alertDetail').textContent='No actual call or office message was made.';}
+ else {el.textContent='No active fall alert';$('alertDetail').textContent='Waiting for a fall event from the helmet.';}
+ if(details)log(details);
+}
+setInterval(()=>{if(alertMode==='warning'){let remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000));$('countdown').textContent=remaining+' s';if(remaining===0){$('countdown').textContent='Waiting for helmet escalation event…'; /* Do not invent ESP32 ESC: wait for real ESC. */}}},100);
+function updateValue(id,val,suffix,stampId){$(id).textContent=val==='NA'?'Unavailable':`${val} ${suffix}`;$(stampId).textContent='Last updated: '+time();}
+function receive(message){log('BLE ← '+message);const p=message.trim().split(',');const kind=p[0];
+ if(kind==='ENV'){lastEnvAt=Date.now();updateValue('temp',p[1]||'NA','°C','tempUpdated');updateValue('humidity',p[2]||'NA','%RH','humidityUpdated');}
+ else if(kind==='HR'){lastHrAt=Date.now();updateValue('hr',p[1]||'NA','BPM','hrUpdated');updateValue('spo2',p[2]||'NA','%','spo2Updated');}
+ else if(kind==='ACC'){$('acc').textContent=(p[1]||'—')+' g';$('accUpdated').textContent='Updated '+time();}
+ else if(kind==='FALL'){currentEvent=p[1]||'test';$('alertDetail').textContent='Event '+currentEvent+' · peak '+(p[2]||'?')+' g. Hold GPIO7 for 2s to acknowledge.';showAlert('warning','FALL event '+currentEvent+' received');}
+ else if(kind==='ACK'){if(!currentEvent||p[1]===currentEvent)showAlert('ack','Helmet acknowledgement received for event '+p[1]);}
+ else if(kind==='ESC'){if(!currentEvent||p[1]===currentEvent)showAlert('escalated','Escalation requested for event '+p[1]);}
+ else if(kind==='END'){if(alertMode==='escalated')showAlert('finished','Emergency signal finished for event '+p[1]);}
+ else if(kind==='PAUSE'||kind==='RESUME')log('Monitoring '+kind.toLowerCase());
+}
+$('connect').onclick=async()=>{try{if(!navigator.bluetooth)throw new Error('Web Bluetooth unavailable — open this HTTPS page inside Bluefy');
+ device=await navigator.bluetooth.requestDevice({filters:[{name:'Smart_Helmet_Clip'}],optionalServices:[SERVICE]});
+ device.addEventListener('gattserverdisconnected',()=>{connection(false);log('Bluetooth disconnected');$('alertDetail').textContent='Bluetooth disconnected. This page cannot receive emergency signals.';});
+ const server=await device.gatt.connect();const service=await server.getPrimaryService(SERVICE);tx=await service.getCharacteristic(TX);rx=await service.getCharacteristic(RX);
+ tx.addEventListener('characteristicvaluechanged',event=>{let bytes=event.target.value;const msg=new TextDecoder().decode(bytes);receive(msg);});
+ await tx.startNotifications();connection(true);log('BLE connected; notifications subscribed');
+}catch(e){connection(false);log('Connection error: '+e.message);}};
+$('disconnect').onclick=()=>{if(device?.gatt?.connected)device.gatt.disconnect();connection(false);};
+$('testFall').onclick=()=>receive('FALL,DEMO,2.50');
+$('testAck').onclick=()=>receive('ACK,'+(currentEvent||'DEMO'));
+$('testEsc').onclick=()=>receive('ESC,'+(currentEvent||'DEMO'));
+$('clear').onclick=()=>{$('events').textContent='';};
 </script></body></html>
