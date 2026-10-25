@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Smart Helmet BLE Test</title>
+<style>:root{font-family:system-ui,-apple-system,sans-serif;color:#162332;background:#f4f6f8}body{max-width:680px;margin:auto;padding:20px}header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.logo{background:#d11026;color:white;border-radius:12px;padding:12px;font-size:24px}h1{font-size:22px;margin:0}p{color:#536477}.card{background:white;padding:18px;border-radius:16px;margin:14px 0;box-shadow:0 1px 5px #0001}.status{font-weight:700}.connected{color:#0a8a57}.disconnected{color:#ae2536}button{border:0;border-radius:10px;padding:13px 16px;font-size:16px;font-weight:650;background:#d11026;color:white;margin:4px 4px 4px 0}button.secondary{background:#31455b}button:disabled{background:#9aa5ae}.metric{font-size:26px;font-weight:700}.small{font-size:13px;color:#64748b}#log{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,monospace;font-size:12px;max-height:300px;overflow:auto;background:#111c2b;color:#e3f2ff;padding:12px;border-radius:10px}#alert{display:none;background:#ffe6e9;color:#9a1227;padding:14px;border-radius:10px;font-weight:750}</style></head><body>
+<header><div class="logo">⛑</div><div><h1>Smart Helmet Clip</h1><div class="small">iPhone BLE connectivity test</div></div></header>
+<div class="card"><p id="status" class="status disconnected">● Not connected</p><button id="connect">Connect to Helmet</button><button id="disconnect" class="secondary" disabled>Disconnect</button><div class="small" id="device">Device: none</div></div>
+<div class="card"><div id="alert">⚠️ POSSIBLE FALL DETECTED — TEST EVENT</div><p class="small">Last received message</p><div class="metric" id="last">—</div><p class="small" id="lastTime">No messages yet</p><button id="hello" disabled>Send HELLO to ESP32</button><button id="testFall" class="secondary" disabled>Trigger test FALL on ESP32</button></div>
+<div class="card"><strong>Event log</strong><div id="log">Ready. Open in Bluefy and tap Connect.</div></div>
+<div class="small">Prototype only. This page does not send emergency alerts or operate reliably in the background.</div>
+<script>
+const SERVICE='4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+const TX='beb5483e-36e1-4688-b7f5-ea07361b26a8';
+const RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+let device=null, command=null, notification=null;
+const $=id=>document.getElementById(id);
+function log(s){const t=new Date().toLocaleTimeString();$('log').textContent=`[${t}] ${s}\n`+$('log').textContent;}
+function status(connected){$('status').textContent=connected?'● BLE Connected':'● Not connected';$('status').className='status '+(connected?'connected':'disconnected');$('connect').disabled=connected;$('disconnect').disabled=!connected;$('hello').disabled=!connected;$('testFall').disabled=!connected;}
+function incoming(event){const message=new TextDecoder().decode(event.target.value);$('last').textContent=message;$('lastTime').textContent='Received '+new Date().toLocaleTimeString();log('← '+message);if(message.startsWith('FALL,')){$('alert').style.display='block';}if(message.startsWith('ACK,')){$('alert').style.display='none';}}
+$('connect').onclick=async()=>{if(!navigator.bluetooth){log('Web Bluetooth is not available. Open this HTTPS page in Bluefy on your iPhone.');return;}try{log('Opening BLE device picker...');device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'Smart_Helmet'}],optionalServices:[SERVICE]});device.addEventListener('gattserverdisconnected',()=>{status(false);log('Device disconnected');});const server=await device.gatt.connect();const service=await server.getPrimaryService(SERVICE);notification=await service.getCharacteristic(TX);command=await service.getCharacteristic(RX);await notification.startNotifications();notification.addEventListener('characteristicvaluechanged',incoming);$('device').textContent='Device: '+(device.name||'Unnamed');status(true);log('Connected and notifications subscribed');}catch(e){log('Connect error: '+e.message);status(false);}};
+$('disconnect').onclick=()=>{if(device?.gatt?.connected){device.gatt.disconnect();}status(false);};
+async function send(text){if(!command){log('Not connected');return;}try{const bytes=new TextEncoder().encode(text);await command.writeValue(bytes);log('→ '+text);}catch(e){log('Write error: '+e.message);}}
+$('hello').onclick=()=>send('HELLO');$('testFall').onclick=()=>send('TEST_FALL');
+</script></body></html>
