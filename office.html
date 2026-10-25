@@ -83,7 +83,28 @@ async function pollCloud(){if(!cloudPolling||cloudBusy)return;cloudBusy=true;
     Object.assign(w,{condition:cond,temp:sampleNumber(s.temp),humidity:sampleNumber(s.humidity),hr:sampleNumber(s.hr),spo2:sampleNumber(s.spo2),lat:sampleNumber(s.lat),lng:sampleNumber(s.lng),mins:ageMin,locationAt:s.locationAt,receivedAt:s.receivedAt});
   }
   for(let w of state.workers){if(!found.has(w.helmet)){w.condition='offline';w.mins=999;}}
-  state.alerts=(data.events||[]).filter(e=>['FALL','ACK','ESC','END'].includes(e.event)).map(e=>({id:e.id,helmet:e.helmet,type:e.event==='FALL'?'Possible Fall':e.event==='ESC'?'Fall Escalation':e.event==='ACK'?'Helmet Acknowledged':'Alarm Ended',description:'BLE event '+String(e.eventId||'')+(e.peak!=null?' · '+e.peak+'g':''),severity:e.event==='FALL'||e.event==='ESC'?'critical':'warning',time:new Date(e.receivedAt).toLocaleString(),status:e.event==='ACK'?'Acknowledged':'Unacknowledged'}));
+  // Reconcile events by helmet and fall-event ID. ACK closes the matching fall,
+  // while ESC updates the same incident instead of adding another open incident.
+  const groups=new Map();
+  for(const e of (data.events||[]).filter(e=>['FALL','ACK','ESC','END'].includes(e.event))){
+    const groupKey=String(e.helmet||'')+'::'+String(e.eventId||e.id);
+    if(!groups.has(groupKey))groups.set(groupKey,[]);
+    groups.get(groupKey).push(e);
+  }
+  state.alerts=Array.from(groups.values()).map(events=>{
+    events.sort((a,b)=>Date.parse(a.receivedAt)-Date.parse(b.receivedAt));
+    const first=events.find(e=>e.event==='FALL')||events[0];
+    const latest=events[events.length-1];
+    const ack=events.find(e=>e.event==='ACK');
+    const escEv=events.find(e=>e.event==='ESC');
+    const ended=events.find(e=>e.event==='END');
+    const status=ack?'Acknowledged':ended?'Ended without acknowledgement':'Unacknowledged';
+    const type=ack?'Fall acknowledged':escEv?'Fall escalation':first.event==='FALL'?'Possible fall':latest.event;
+    return {id:first.id,helmet:first.helmet,type,
+      description:'BLE event '+String(first.eventId||'')+(first.peak!=null?' · '+first.peak+'g':''),
+      severity:ack?'warning':'critical',time:new Date(latest.receivedAt).toLocaleString(),
+      status,receivedAt:latest.receivedAt};
+  }).sort((a,b)=>Date.parse(b.receivedAt)-Date.parse(a.receivedAt));
   save();render();cloudStatus('Connected · '+(data.helmets||[]).length+' helmets returned · last poll '+new Date().toLocaleTimeString()+(data.truncated?' · results truncated':''));
  }catch(e){cloudStatus('Cloud error: '+e.message+'. Existing results may be stale.');state.workers.forEach(w=>{w.condition='offline'});render();}
  finally{cloudBusy=false;}
